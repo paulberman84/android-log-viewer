@@ -1,0 +1,10 @@
+syntax:glob
+.*
+bin/
+lib/
+docs/
+javadoc/
+out/
+*.orig
+*.log
+*.jar

@@ -1,0 +1,32 @@
+version 0.9
+    [+] Disabling filters
+    [*] Search hotkey changed to Ctrl+F
+    [*] Minor bugfix
+    
+version 0.8
+	[+] Search back
+	[+] Highlight search results
+	[+] Pinned records window
+
+version 0.7
+	[+] Full text search
+
+version 0.6
+	[+] Pid-to-name tooltip in dumpstate files
+
+version 0.5
+	[+] Filter editing
+    
+version 0.4
+	[+] Hiding filter
+
+version 0.3
+	[+] Dumpstate parsing
+
+version 0.2
+	[+] Filtering
+
+version 0.1
+	[+] Display adb output
+	[+] Autoscroll
+	[+] Coloring
