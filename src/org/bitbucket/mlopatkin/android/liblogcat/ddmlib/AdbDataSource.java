@@ -31,20 +31,18 @@ import java.util.regex.Matcher;
 import org.apache.log4j.Logger;
 import org.bitbucket.mlopatkin.android.liblogcat.DataSource;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecord;
+import org.bitbucket.mlopatkin.android.liblogcat.LogRecord.Buffer;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecordDataSourceListener;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecordStream;
 import org.bitbucket.mlopatkin.android.liblogcat.PidToProcessConverter;
 import org.bitbucket.mlopatkin.android.liblogcat.ProcessListParser;
-import org.bitbucket.mlopatkin.android.liblogcat.LogRecord.Kind;
 import org.bitbucket.mlopatkin.android.logviewer.Configuration;
 
 import com.android.ddmlib.AdbCommandRejectedException;
-import com.android.ddmlib.AndroidDebugBridge;
 import com.android.ddmlib.IDevice;
 import com.android.ddmlib.IShellOutputReceiver;
 import com.android.ddmlib.ShellCommandUnresponsiveException;
 import com.android.ddmlib.TimeoutException;
-import com.android.ddmlib.AndroidDebugBridge.IDeviceChangeListener;
 
 public class AdbDataSource implements DataSource {
 
@@ -55,34 +53,10 @@ public class AdbDataSource implements DataSource {
     private IDevice device;
     private AdbPidToProcessConverter converter;
 
-    public AdbDataSource() {
-        AndroidDebugBridge.addDeviceChangeListener(changeListener);
-    }
-
-    private IDeviceChangeListener changeListener = new IDeviceChangeListener() {
-        @Override
-        public void deviceDisconnected(IDevice device) {
-
-        }
-
-        @Override
-        public void deviceConnected(IDevice device) {
-            if (AdbDataSource.this.device == null) {
-                AdbDataSource.this.device = device;
-                initStreams();
-            }
-        }
-
-        @Override
-        public void deviceChanged(IDevice device, int changeMask) {
-
-        }
-    };
-
     private void initStreams() {
-        for (LogRecord.Kind kind : LogRecord.Kind.values()) {
-            if (kind != LogRecord.Kind.UNKNOWN) {
-                setUpStream(kind);
+        for (LogRecord.Buffer buffer : LogRecord.Buffer.values()) {
+            if (buffer != LogRecord.Buffer.UNKNOWN) {
+                setUpStream(buffer);
             }
         }
         converter = new AdbPidToProcessConverter();
@@ -98,6 +72,8 @@ public class AdbDataSource implements DataSource {
         for (AdbBuffer stream : buffers) {
             stream.close();
         }
+        backgroundUpdater.shutdown();
+        shellCommandExecutor.shutdown();
     }
 
     @Override
@@ -109,28 +85,6 @@ public class AdbDataSource implements DataSource {
     public synchronized void setLogRecordListener(LogRecordDataSourceListener listener) {
         this.listener = listener;
         notifyAll();
-    }
-
-    public static AdbDataSource createAdbDataSource() {
-        AndroidDebugBridge.init(false);
-        AndroidDebugBridge adb = AndroidDebugBridge.createBridge();
-        if (adb == null) {
-            logger.error("ADB is null");
-            return null;
-        }
-        while (!adb.hasInitialDeviceList()) { 
-            // do not remove following log line, it prevents server vm from
-            // dropping this cycle away and thus fixes #6
-            logger.debug("ADB retry");
-        }
-        logger.debug("ADB has initial device list");
-        if (adb.getDevices().length > 0) {
-            IDevice first = adb.getDevices()[0];
-            return new AdbDataSource(first);
-        } else {
-            logger.info("No device detected");
-            return new AdbDataSource();
-        }
     }
 
     private synchronized void waitForListener() {
@@ -161,15 +115,15 @@ public class AdbDataSource implements DataSource {
 
     private Set<AdbBuffer> buffers = new HashSet<AdbBuffer>();
 
-    private void setUpStream(LogRecord.Kind kind) {
-        String bufferName = Configuration.adb.bufferName(kind);
+    private void setUpStream(LogRecord.Buffer buffer) {
+        String bufferName = Configuration.adb.bufferName(buffer);
         if (bufferName == null) {
-            logger.warn("This kind of log isn't supported by adb source: " + kind);
+            logger.warn("This kind of log isn't supported by adb source: " + buffer);
         }
 
         final String commandLine = createLogcatCommandLine(bufferName);
-        final AdbBuffer buffer = new AdbBuffer(kind, commandLine);
-        buffers.add(buffer);
+        final AdbBuffer adbBuffer = new AdbBuffer(buffer, commandLine);
+        buffers.add(adbBuffer);
 
     }
 
@@ -203,39 +157,40 @@ public class AdbDataSource implements DataSource {
     private class AdbBuffer {
         private ShellInputStream shellInput = new ShellInputStream();
         private LogRecordStream in;
-        private LogRecord.Kind kind;
+        private LogRecord.Buffer buffer;
         private PollingThread pollingThread;
         private Thread shellExecutor;
 
-        public AdbBuffer(LogRecord.Kind kind, String commandLine) {
-            this.kind = kind;
+        public AdbBuffer(LogRecord.Buffer buffer, String commandLine) {
+            this.buffer = buffer;
             in = new LogRecordStream(shellInput);
             shellExecutor = new Thread(new AdbShellCommand(commandLine, shellInput),
-                    "Shell-reader-" + kind);
+                    "Shell-reader-" + buffer);
             pollingThread = new PollingThread();
             shellExecutor.start();
             pollingThread.start();
         }
 
         void close() {
-            shellInput.close();
             pollingThread.close();
+            shellInput.close();
         }
 
         private class PollingThread extends Thread {
 
             public PollingThread() {
-                super("ADB-polling-" + kind);
+                super("ADB-polling-" + buffer);
             }
 
             @Override
             public void run() {
                 waitForListener();
-                LogRecord record = in.next(kind);
+                LogRecord record = in.next(buffer);
                 while (!closed && record != null) {
                     pushRecord(record);
-                    record = in.next(kind);
+                    record = in.next(buffer);
                 }
+
             }
 
             private boolean closed = false;
@@ -248,8 +203,8 @@ public class AdbDataSource implements DataSource {
     }
 
     @Override
-    public EnumSet<Kind> getAvailableBuffers() {
-        return EnumSet.of(Kind.MAIN, Kind.SYSTEM, Kind.RADIO, Kind.EVENTS);
+    public EnumSet<Buffer> getAvailableBuffers() {
+        return EnumSet.of(Buffer.MAIN, Buffer.SYSTEM, Buffer.RADIO, Buffer.EVENTS);
     }
 
     private ExecutorService backgroundUpdater = Executors.newSingleThreadExecutor();

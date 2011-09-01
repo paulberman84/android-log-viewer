@@ -31,7 +31,6 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
@@ -40,14 +39,18 @@ import javax.swing.Timer;
 
 import org.apache.log4j.Logger;
 import org.bitbucket.mlopatkin.android.liblogcat.DataSource;
+import org.bitbucket.mlopatkin.android.liblogcat.ddmlib.AdbDataSource;
+import org.bitbucket.mlopatkin.android.liblogcat.ddmlib.AdbDeviceManager;
 import org.bitbucket.mlopatkin.android.liblogcat.file.FileDataSourceFactory;
 import org.bitbucket.mlopatkin.android.liblogcat.file.UnrecognizedFormatException;
+import org.bitbucket.mlopatkin.android.logviewer.SelectDeviceDialog.DialogResultReceiver;
 import org.bitbucket.mlopatkin.android.logviewer.widgets.DecoratingRendererTable;
 import org.bitbucket.mlopatkin.android.logviewer.widgets.UiHelper;
 
-import com.android.ddmlib.AndroidDebugBridge;
+import com.android.ddmlib.AndroidDebugBridge.IDeviceChangeListener;
+import com.android.ddmlib.IDevice;
 
-public class MainFrame extends JFrame {
+public class MainFrame extends JFrame implements DialogResultReceiver {
     private static final Logger logger = Logger.getLogger(MainFrame.class);
 
     private DecoratingRendererTable logElements;
@@ -68,20 +71,9 @@ public class MainFrame extends JFrame {
      * @wbp.parser.entryPoint
      */
     public MainFrame() {
+        super();
         initialize();
-
         setTransferHandler(new FileTransferHandler(this));
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            @Override
-            public void run() {
-                if (source != null) {
-                    source.close();
-                }
-                if (AndroidDebugBridge.getBridge() != null) {
-                    AndroidDebugBridge.terminate();
-                }
-            }
-        });
     }
 
     public void setSource(DataSource newSource) {
@@ -91,6 +83,7 @@ public class MainFrame extends JFrame {
         source = newSource;
         recordsModel.clear();
         source.setLogRecordListener(scrollController);
+        bufferMenu.setAvailableBuffers(source.getAvailableBuffers());
     }
 
     private PidToProcessMapper mapper = new PidToProcessMapper() {
@@ -151,12 +144,6 @@ public class MainFrame extends JFrame {
 
         JPanel filterPanel = new FilterPanel(filterController);
         panel.add(filterPanel);
-
-        // if (source.getAvailableBuffers() != null) {
-        // KindFilterMenu menu = new
-        // KindFilterMenu(source.getAvailableBuffers(), filterController);
-        // UiHelper.addPopupMenu(filterPanel, menu);
-        // }
 
         setupSearchButtons();
         setupMainMenu();
@@ -285,12 +272,25 @@ public class MainFrame extends JFrame {
         source.reset();
     }
 
+    private BufferFilterMenu bufferMenu;
+
     private void setupMainMenu() {
         JMenuBar mainMenu = new JMenuBar();
+
         JMenu mnFile = new JMenu("File");
-        JMenuItem mnOpen = new JMenuItem(acOpenFile);
-        mnFile.add(mnOpen);
+        mnFile.add(acOpenFile);
         mainMenu.add(mnFile);
+
+        JMenu mnAdb = new JMenu("ADB");
+        mnAdb.add(acConnectToDevice);
+        mnAdb.addSeparator();
+        mnAdb.add(acResetLogs);
+        mainMenu.add(mnAdb);
+
+        JMenu mnFilters = new JMenu("Buffers");
+        bufferMenu = new BufferFilterMenu(mnFilters, filterController);
+        mainMenu.add(mnFilters);
+
         setJMenuBar(mainMenu);
     }
 
@@ -316,4 +316,43 @@ public class MainFrame extends JFrame {
             }
         }
     };
+
+    private Action acConnectToDevice = new AbstractAction("Connect to device...") {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            SelectDeviceDialog.showSelectDeviceDialog(MainFrame.this);
+        }
+    };
+
+    @Override
+    public void onDialogResult(SelectDeviceDialog dialog, IDevice selectedDevice) {
+        if (selectedDevice != null) {
+            DeviceDisconnectedNotifier.startWatching(selectedDevice);
+            setSource(new AdbDataSource(selectedDevice));
+        }
+    }
+
+    private Action acResetLogs = new AbstractAction("Reset logs") {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            reset();
+        }
+    };
+
+    /**
+     * Wait for device to connect.
+     */
+    public void waitForDevice() {
+        IDeviceChangeListener pendingAttacher = new AdbDeviceManager.AbstractDeviceListener() {
+            @Override
+            public void deviceConnected(IDevice device) {
+                DeviceDisconnectedNotifier.startWatching(device);
+                setSource(new AdbDataSource(device));
+                AdbDeviceManager.removeDeviceChangeListener(this);
+            }
+        };
+        AdbDeviceManager.addDeviceChangeListener(pendingAttacher);
+    }
 }
