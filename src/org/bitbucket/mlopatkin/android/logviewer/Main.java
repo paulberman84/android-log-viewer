@@ -18,9 +18,11 @@ package org.bitbucket.mlopatkin.android.logviewer;
 import java.awt.EventQueue;
 import java.io.File;
 import java.io.IOException;
+import java.lang.Thread.UncaughtExceptionHandler;
 
 import javax.swing.JOptionPane;
 
+import org.apache.log4j.Logger;
 import org.bitbucket.mlopatkin.android.liblogcat.DataSource;
 import org.bitbucket.mlopatkin.android.liblogcat.ddmlib.AdbDataSource;
 import org.bitbucket.mlopatkin.android.liblogcat.ddmlib.AdbDeviceManager;
@@ -30,14 +32,17 @@ import org.bitbucket.mlopatkin.android.liblogcat.file.UnrecognizedFormatExceptio
 import com.android.ddmlib.IDevice;
 
 public class Main {
+    private static final Logger logger = Logger.getLogger(Main.class);
 
-    public static final String APP_VERSION = "0.14";
+    public static final String APP_VERSION = "0.14.1";
 
     private DataSource initialSource;
     private MainFrame window;
 
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler(exceptionHandler);
         Configuration.forceInit();
+        logger.info("Android Log Viewer " + APP_VERSION);
         if (args.length == 0) {
             // ADB mode
             new Main().start();
@@ -94,4 +99,16 @@ public class Main {
             }
         });
     }
+
+    private static UncaughtExceptionHandler exceptionHandler = new UncaughtExceptionHandler() {
+        @Override
+        public void uncaughtException(Thread t, Throwable e) {
+            try {
+                logger.error("Uncaught exception in " + t.getName(), e);
+            } catch (Throwable ex) {
+                logger.error("Exception in exception handler", ex);
+            }
+
+        }
+    };
 }
