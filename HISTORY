@@ -1,0 +1,62 @@
+version 0.14
+	[+] File opening via main menu
+	[+] Device selector
+	[+] Notification about disconnected device
+	[+] Drag&drop support for files
+	[+] Multiple colors for highlighting filters
+	
+	[*] "Reset logs" menu item moved into main menu
+	[*] Buffer type selection moved into main menu
+	[*] Status bar introduced
+	[*] Minor bugfixes and refactorings
+	
+version 0.13
+    [+] Reset log in adb mode
+    
+version 0.12	
+	[+] Case-insensitive search
+    [+] Index window for filter results
+     
+version 0.11
+	[+] Parse simple log files in threadtime and brief formats
+	[*] Show message if text not found
+
+version 0.10
+    [+] Filtering by log type
+    [+] New adb interaction library
+
+version 0.9.1    
+    [*] Copy from log fix
+    
+version 0.9
+    [+] Disabling filters
+    [*] Search hotkey changed to Ctrl+F
+    [*] Minor bugfix
+    
+version 0.8
+	[+] Search back
+	[+] Highlight search results
+	[+] Pinned records window
+
+version 0.7
+	[+] Full text search
+
+version 0.6
+	[+] Pid-to-name tooltip in dumpstate files
+
+version 0.5
+	[+] Filter editing
+    
+version 0.4
+	[+] Hiding filter
+
+version 0.3
+	[+] Dumpstate parsing
+
+version 0.2
+	[+] Filtering
+
+version 0.1
+	[+] Display adb output
+	[+] Autoscroll
+	[+] Coloring
