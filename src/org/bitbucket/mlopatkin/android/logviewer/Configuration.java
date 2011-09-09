@@ -18,8 +18,10 @@ package org.bitbucket.mlopatkin.android.logviewer;
 import java.awt.Color;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -28,6 +30,7 @@ import java.util.Properties;
 import java.util.TreeMap;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.ConsoleAppender;
 import org.apache.log4j.Logger;
@@ -35,6 +38,7 @@ import org.apache.log4j.PatternLayout;
 import org.apache.log4j.PropertyConfigurator;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecord.Buffer;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecord.Priority;
+import org.bitbucket.mlopatkin.utils.MyStringUtils;
 
 public class Configuration {
 
@@ -142,6 +146,14 @@ public class Configuration {
         public static String psCommandLine() {
             return "ps -P";
         }
+
+        public static String executable() {
+            return instance.properties.getProperty(PREFIX + "executable", "adb");
+        }
+
+        public static void executable(String newExecutable) {
+            instance.properties.setProperty(PREFIX + "executable", newExecutable);
+        }
     }
 
     public static class dump {
@@ -155,8 +167,6 @@ public class Configuration {
     private static final Logger logger = Logger.getLogger(Configuration.class);
 
     private Properties properties = new Properties();
-
-    private static final String CONFIG_FILE_NAME = "logview.properties";
 
     private void setUpDefaults() {
         // set up default logging configuration
@@ -183,9 +193,9 @@ public class Configuration {
         return result;
     }
 
-    private Properties loadFromFile() {
+    private Properties loadFromFile(String fileName) {
         Properties result = new Properties();
-        File configFile = new File(CONFIG_FILE_NAME);
+        File configFile = new File(fileName);
         if (configFile.exists()) {
             try {
                 InputStream in = new FileInputStream(configFile);
@@ -204,7 +214,7 @@ public class Configuration {
     private Configuration() {
         setUpDefaults();
         properties.putAll(loadFromResources());
-        properties.putAll(loadFromFile());
+        properties.putAll(loadFromFile(getConfigFileName()));
         PropertyConfigurator.configure(properties);
     }
 
@@ -246,5 +256,79 @@ public class Configuration {
     }
 
     static void forceInit() {
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                Configuration.save();
+            }
+        });
+    }
+
+    private static final String CONFIG_FILE_DIR = ".logview";
+    private static final String CONFIG_FILE_DIR_WIN = "logview";
+    private static final String CONFIG_FILE_NAME = "logview.properties";
+
+    private String getSystemConfigDir() {
+        if (SystemUtils.IS_OS_WINDOWS) {
+            return System.getenv("APPDATA");
+        } else {
+            return SystemUtils.USER_HOME;
+        }
+    }
+
+    private String getConfigFileDir() {
+        String systemConfig = getSystemConfigDir();
+        if (systemConfig == null) {
+            return null;
+        }
+        if (SystemUtils.IS_OS_WINDOWS) {
+            return MyStringUtils.joinPath(systemConfig, CONFIG_FILE_DIR_WIN);
+        } else {
+            return MyStringUtils.joinPath(systemConfig, CONFIG_FILE_DIR);
+        }
+    }
+
+    private String getConfigFileName() {
+        String configDir = getConfigFileDir();
+        if (configDir == null) {
+            return null;
+        }
+        return MyStringUtils.joinPath(configDir, CONFIG_FILE_NAME);
+    }
+
+    private void ensureDir() {
+        String dir = getConfigFileDir();
+        if (dir != null) {
+            File dirFile = new File(dir);
+            if (!dirFile.exists()) {
+                dirFile.mkdirs();
+            }
+        }
+    }
+
+    private void saveToFile() {
+        String configFile = getConfigFileName();
+        if (configFile == null) {
+            logger.error("Could not obtain system config file dir");
+            return;
+        }
+        File file = new File(configFile);
+        ensureDir();
+        try {
+            Writer writer = new FileWriter(file);
+            try {
+                properties
+                        .store(writer,
+                                "Don't edit this file while application is running or your changes will be lost\n");
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            logger.error("Cannot save properties", e);
+        }
+    }
+
+    public static void save() {
+        instance.saveToFile();
     }
 }
