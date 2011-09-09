@@ -57,14 +57,11 @@ import org.bitbucket.mlopatkin.android.logviewer.SelectDeviceDialog.DialogResult
 import org.bitbucket.mlopatkin.android.logviewer.widgets.DecoratingRendererTable;
 import org.bitbucket.mlopatkin.android.logviewer.widgets.UiHelper;
 
-import com.android.ddmlib.AndroidDebugBridge.IDeviceChangeListener;
 import com.android.ddmlib.IDevice;
+import com.android.ddmlib.AndroidDebugBridge.IDeviceChangeListener;
 
 public class MainFrame extends JFrame implements DialogResultReceiver {
     private static final Logger logger = Logger.getLogger(MainFrame.class);
-
-    private DecoratingRendererTable logElements;
-    private JScrollPane scrollPane;
 
     private LogRecordTableModel recordsModel = new LogRecordTableModel();
     private AutoScrollController scrollController;
@@ -73,8 +70,14 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
     private BookmarksController bookmarksController;
 
     private DataSource source;
-    private JPanel panel;
+
+    private DecoratingRendererTable logElements;
+    private JPanel controlsPanel;
     private JTextField instantSearchTextField;
+
+    private JPanel statusPanel;
+    private JLabel searchStatusLabel;
+    private JLabel sourceStatusLabel;
 
     public MainFrame() {
         super();
@@ -92,6 +95,8 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
         bookmarksController.clear();
         source.setLogRecordListener(scrollController);
         bufferMenu.setAvailableBuffers(source.getAvailableBuffers());
+        showSourceMessage(source.toString());
+        updatingTimer.start();
     }
 
     public void setSourceAsync(final DataSource newSource) {
@@ -140,7 +145,7 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
         setTransferHandler(fileHandler);
         logElements.setTransferHandler(new LogRecordsTransferHandler(fileHandler));
 
-        scrollPane = new JScrollPane(logElements);
+        JScrollPane scrollPane = new JScrollPane(logElements);
         getContentPane().add(scrollPane, BorderLayout.CENTER);
 
         scrollController = new AutoScrollController(logElements, recordsModel);
@@ -150,31 +155,34 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
         new LogRecordPopupMenuHandler(logElements, filterController, bookmarksController);
         searchController = new SearchController(logElements, recordsModel);
 
-        panel = new JPanel();
-        getContentPane().add(panel, BorderLayout.SOUTH);
-        panel.setLayout(new BoxLayout(panel, BoxLayout.PAGE_AXIS));
+        controlsPanel = new JPanel();
+        getContentPane().add(controlsPanel, BorderLayout.SOUTH);
+        controlsPanel.setLayout(new BoxLayout(controlsPanel, BoxLayout.PAGE_AXIS));
 
         instantSearchTextField = new JTextField();
-        panel.add(instantSearchTextField);
+        controlsPanel.add(instantSearchTextField);
         instantSearchTextField.setColumns(10);
         instantSearchTextField.setVisible(false);
 
         JPanel filterPanel = new FilterPanel(filterController);
-        panel.add(filterPanel);
+        controlsPanel.add(filterPanel);
 
         statusPanel = new JPanel();
         statusPanel.setBorder(new EtchedBorder(EtchedBorder.LOWERED, null, null));
-        panel.add(statusPanel);
+        controlsPanel.add(statusPanel);
         statusPanel.setLayout(new BoxLayout(statusPanel, BoxLayout.LINE_AXIS));
 
-        statusLabel = new JLabel();
-        statusLabel.setHorizontalAlignment(SwingConstants.LEFT);
-        statusPanel.add(statusLabel);
+        searchStatusLabel = new JLabel();
+        searchStatusLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        statusPanel.add(searchStatusLabel);
 
-        horizontalGlue = Box.createHorizontalGlue();
+        Component horizontalGlue = Box.createHorizontalGlue();
         statusPanel.add(horizontalGlue);
 
-        rigidArea = Box.createRigidArea(new Dimension(0, 16));
+        sourceStatusLabel = new JLabel();
+        statusPanel.add(sourceStatusLabel);
+
+        Component rigidArea = Box.createRigidArea(new Dimension(0, 16));
         statusPanel.add(rigidArea);
 
         setupSearchButtons();
@@ -194,7 +202,7 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
             public void actionPerformed(ActionEvent e) {
                 if (searchController.isActive()) {
                     if (!searchController.searchNext()) {
-                        showMessage(MESSAGE_NOT_FOUND);
+                        showSearchMessage(MESSAGE_NOT_FOUND);
                     }
                 } else {
                     showSearchField();
@@ -207,7 +215,7 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
             public void actionPerformed(ActionEvent e) {
                 if (searchController.isActive()) {
                     if (!searchController.searchPrev()) {
-                        showMessage(MESSAGE_NOT_FOUND);
+                        showSearchMessage(MESSAGE_NOT_FOUND);
                     }
                 } else {
                     showSearchField();
@@ -231,17 +239,10 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
                         hideSearchField();
                         if (!searchController.startSearch(instantSearchTextField.getText())) {
                             logElements.requestFocusInWindow();
-                            showMessage(MESSAGE_NOT_FOUND);
+                            showSearchMessage(MESSAGE_NOT_FOUND);
                         }
                     }
                 });
-
-        bindKeyGlobal(KEY_SHOW_BOOKMARKS, ACTION_SHOW_BOOKMARKS, new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                bookmarksController.showWindow();
-            }
-        });
     }
 
     private void bindKeyGlobal(String key, String actionKey, Action action) {
@@ -266,21 +267,20 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
         instantSearchTextField.setVisible(true);
         instantSearchTextField.selectAll();
         instantSearchTextField.requestFocusInWindow();
-        statusLabel.setVisible(false);
-        panel.revalidate();
-        panel.repaint();
+        searchStatusLabel.setVisible(false);
+        controlsPanel.revalidate();
+        controlsPanel.repaint();
 
     }
 
     private void hideSearchField() {
         instantSearchTextField.setVisible(false);
-        panel.revalidate();
-        panel.repaint();
+        controlsPanel.revalidate();
+        controlsPanel.repaint();
     }
 
     private static final String ACTION_SHOW_BOOKMARKS = "show_bookmarks";
     private static final String KEY_SHOW_BOOKMARKS = "control P";
-    private JLabel statusLabel;
 
     private static final int MESSAGE_DELAY = 2000;
     private static final String MESSAGE_NOT_FOUND = "Text not found";
@@ -288,15 +288,31 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            statusLabel.setVisible(false);
+            searchStatusLabel.setVisible(false);
         }
     });
 
-    private void showMessage(String text) {
-        statusLabel.setText(text);
-        statusLabel.setVisible(true);
+    Timer updatingTimer = new Timer(MESSAGE_DELAY, new ActionListener() {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (source != null) {
+                showSourceMessage(source.toString());
+            }
+        }
+    });
+
+    private void showSearchMessage(String text) {
+        searchStatusLabel.setText(text);
+        searchStatusLabel.setVisible(true);
         hidingTimer.setRepeats(false);
         hidingTimer.start();
+    }
+
+    private void showSourceMessage(String text) {
+        sourceStatusLabel.setText(text);
+        statusPanel.revalidate();
+        statusPanel.repaint();
     }
 
     public void reset() {
@@ -312,12 +328,15 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
         JMenu mnFile = new JMenu("File");
         mnFile.add(acOpenFile);
         mnFile.add(acSaveToFile);
+        mnFile.addSeparator();
+        mnFile.add(acShowBookmarks);
         mainMenu.add(mnFile);
 
         JMenu mnAdb = new JMenu("ADB");
         mnAdb.add(acConnectToDevice);
         mnAdb.addSeparator();
         mnAdb.add(acResetLogs);
+        mnAdb.add(acChangeConfiguration);
         mainMenu.add(mnAdb);
 
         JMenu mnFilters = new JMenu("Buffers");
@@ -377,9 +396,14 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
             reset();
         }
     };
-    private JPanel statusPanel;
-    private Component horizontalGlue;
-    private Component rigidArea;
+
+    private Action acChangeConfiguration = new AbstractAction("Configuration...") {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            ConfigurationDialog.showConfigurationDialog(MainFrame.this);
+        }
+    };
     private IDeviceChangeListener pendingAttacher;
 
     /**
@@ -409,6 +433,12 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
             }
         };
         AdbDeviceManager.addDeviceChangeListener(pendingAttacher);
+        EventQueue.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                showSourceMessage("Waiting for device...");
+            }
+        });
     }
 
     private void stopWaitingForDevice() {
@@ -439,6 +469,17 @@ public class MainFrame extends JFrame implements DialogResultReceiver {
                 }
                 saveTableToFile(file);
             }
+        }
+    };
+
+    private AbstractAction acShowBookmarks = new AbstractAction("Show bookmarks") {
+        {
+            putValue(ACCELERATOR_KEY, KeyStroke.getKeyStroke("control P"));
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            bookmarksController.showWindow();
         }
     };
 

@@ -34,7 +34,7 @@ import com.android.ddmlib.IDevice;
 public class Main {
     private static final Logger logger = Logger.getLogger(Main.class);
 
-    public static final String APP_VERSION = "0.15.1";
+    public static final String APP_VERSION = "0.15";
 
     private DataSource initialSource;
     private MainFrame window;
@@ -74,14 +74,14 @@ public class Main {
         if (device != null) {
             DeviceDisconnectedNotifier.startWatching(device);
             initialSource = new AdbDataSource(device);
+        } else {
+            window.waitForDevice();
         }
     }
 
     void start() {
         if (initialSource != null) {
             window.setSourceAsync(initialSource);
-        } else {
-            window.waitForDevice();
         }
         EventQueue.invokeLater(new Runnable() {
             @Override
@@ -108,7 +108,8 @@ public class Main {
             try {
                 logger.error("Uncaught exception in " + t.getName(), e);
             } catch (Throwable ex) {
-                logger.error("Exception in exception handler", ex);
+                // bad idea to log something if we already failed with logging
+                // logger.error("Exception in exception handler", ex);
             }
 
         }
