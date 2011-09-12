@@ -15,16 +15,19 @@
  */
 package org.bitbucket.mlopatkin.android.logviewer;
 
+import java.util.regex.PatternSyntaxException;
+
 import org.apache.commons.lang3.StringUtils;
 import org.bitbucket.mlopatkin.android.liblogcat.LogRecord;
+import org.bitbucket.mlopatkin.android.logviewer.search.HighlightStrategy;
+import org.bitbucket.mlopatkin.android.logviewer.search.IgnoreCaseSearcher;
+import org.bitbucket.mlopatkin.android.logviewer.search.RegExpSearcher;
 import org.bitbucket.mlopatkin.android.logviewer.widgets.DecoratingRendererTable;
-import org.bitbucket.mlopatkin.utils.MyStringUtils;
 
 public class SearchController {
 
     private DecoratingRendererTable table;
     private LogRecordTableModel model;
-    private String text;
     private int curRow;
     private TextHighlightCellRenderer renderer = new TextHighlightCellRenderer();
 
@@ -38,13 +41,13 @@ public class SearchController {
     private static final int MODE_BACKWARD = -1;
 
     public boolean startSearch(String text) {
-        this.text = text;
-        if (StringUtils.isBlank(text)) {
-            renderer.setTextToHighLight(null);
+        strategy = createStrategy(text);
+        if (strategy == null) {
+            renderer.setHighlightStrategy(null);
             table.repaint();
             return false;
         }
-        renderer.setTextToHighLight(text);
+        renderer.setHighlightStrategy((HighlightStrategy) strategy);
         table.repaint();
         curRow = table.getSelectedRow();
         return performSearch(MODE_FORWARD, curRow >= 0);
@@ -59,7 +62,7 @@ public class SearchController {
     }
 
     private boolean performSearch(int searchMode, boolean scanCurrentRow) {
-        if (StringUtils.isBlank(text)) {
+        if (!isActive()) {
             return false;
         }
         if (curRow != table.getSelectedRow()) {
@@ -76,13 +79,19 @@ public class SearchController {
         }
         for (int i = startPos; i != endPos; i += searchMode) {
             LogRecord record = model.getRowData(table.convertRowIndexToModel(i));
-            if (MyStringUtils.containsIgnoreCase(record.getTag(), text)
-                    || MyStringUtils.containsIgnoreCase(record.getMessage(), text)) {
+            if (isRowMatch(record)) {
                 setCurrentRow(i);
                 return true;
             }
         }
         return false;
+    }
+
+    private HighlightStrategy strategy;
+
+    private boolean isRowMatch(LogRecord record) {
+        return strategy.isStringMatched(record.getMessage())
+                || strategy.isStringMatched(record.getTag());
     }
 
     private void setCurrentRow(int i) {
@@ -93,6 +102,23 @@ public class SearchController {
     }
 
     public boolean isActive() {
-        return !StringUtils.isBlank(text);
+        return strategy != null;
+    }
+
+    private static final char REGEX_BOUND_CHAR = '/';
+
+    private static HighlightStrategy createStrategy(String request) throws PatternSyntaxException {
+        if (StringUtils.isNotBlank(request)) {
+            final int length = request.length();
+            if (length > 1) {
+                if (request.charAt(0) == REGEX_BOUND_CHAR
+                        && request.charAt(length - 1) == REGEX_BOUND_CHAR) {
+                    return new RegExpSearcher(request.substring(1, length - 1));
+                }
+            }
+            return new IgnoreCaseSearcher(request);
+        } else {
+            return null;
+        }
     }
 }
